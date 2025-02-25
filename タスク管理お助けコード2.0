@@ -1,0 +1,53 @@
+function updateTaskManagementSheet() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const taskSheet = spreadsheet.getSheetByName("タスク管理");
+  const sheets = spreadsheet.getSheets();
+  const output = [];
+
+  for (const sheet of sheets) {
+    if (sheet.getName().startsWith("★")) {
+      const lastRow = sheet.getLastRow();
+      if (lastRow < 5) continue;
+
+      const range = sheet.getRange("A5:G" + lastRow);
+      const values = range.getValues();
+      const filtered = values.filter(row => row[2]);
+
+      output.push(...filtered);
+    }
+  }
+
+  if (output.length > 0) {
+    taskSheet.getRange(3, 1, output.length, output[0].length).setValues(output);
+  }
+}
+
+function updateQuery() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const taskSheet = spreadsheet.getSheetByName("タスク管理");
+  const sheets = spreadsheet.getSheets();
+
+  const targetRanges = sheets
+    .filter(sheet => sheet.getName().startsWith("★"))
+    .map(sheet => `'${sheet.getName().replace(/'/g, "''")}'!A5:G`);
+
+  if (targetRanges.length === 0) return;
+
+  const query = `=QUERY({${targetRanges.join(";")}}, "SELECT * WHERE Col3 IS NOT NULL AND Col7 <> '完了' ORDER BY Col6 ASC")`;
+  taskSheet.getRange("A3").setValue(query);
+}
+
+function checkAndUpdateQuery() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = spreadsheet.getSheets();
+  const currentCount = sheets.filter(sheet => sheet.getName().startsWith("★")).length;
+
+  const properties = PropertiesService.getScriptProperties();
+  const savedCount = parseInt(properties.getProperty("クライアントシート数")) || 0;
+
+  if (currentCount > savedCount) {
+    updateQuery();
+  }
+
+  properties.setProperty("クライアントシート数", currentCount);
+}
