@@ -1,53 +1,68 @@
-function updateTaskManagementSheet() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const taskSheet = spreadsheet.getSheetByName("タスク管理");
-  const sheets = spreadsheet.getSheets();
-  const output = [];
+// "タスク管理"シートのA3にQUERY関数を設定してデータを自動更新するメイン関数
+function updateTaskManagementWithQuery() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet(); // 今開いているスプレッドシートを取ってくる
+  const taskSheet = spreadsheet.getSheetByName("タスク管理"); // "タスク管理"という名前のシートを見つける
+  const sheets = spreadsheet.getSheets(); // スプレッドシートの中にある全部のシートを取ってくる
 
-  for (const sheet of sheets) {
-    if (sheet.getName().startsWith("★")) {
-      const lastRow = sheet.getLastRow();
-      if (lastRow < 5) continue;
-
-      const range = sheet.getRange("A5:G" + lastRow);
-      const values = range.getValues();
-      const filtered = values.filter(row => row[2]);
-
-      output.push(...filtered);
-    }
-  }
-
-  if (output.length > 0) {
-    taskSheet.getRange(3, 1, output.length, output[0].length).setValues(output);
-  }
-}
-
-function updateQuery() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const taskSheet = spreadsheet.getSheetByName("タスク管理");
-  const sheets = spreadsheet.getSheets();
-
+  // "★"で始まるシートのデータを集める準備をする
   const targetRanges = sheets
-    .filter(sheet => sheet.getName().startsWith("★"))
-    .map(sheet => `'${sheet.getName().replace(/'/g, "''")}'!A5:G`);
-
+    .filter(sheet => sheet.getName().startsWith("★")) // "★"で始まるシートだけを選ぶ
+    .map(sheet => `'${sheet.getName().replace(/'/g, "''")}'!A5:G`); // 各シートのA5からG列までの範囲を指定（シート名に'がある場合に備えて修正）
+  
+  // もし"★"で始まるシートが1つもなかったら何もしない
   if (targetRanges.length === 0) return;
 
+  // QUERY関数を作ってA3に設定する
   const query = `=QUERY({${targetRanges.join(";")}}, "SELECT * WHERE Col3 IS NOT NULL AND Col7 <> '完了' ORDER BY Col6 ASC")`;
-  taskSheet.getRange("A3").setValue(query);
+  // ↑ "★"シートのデータを全部集めて、C列が空じゃなくてG列が"完了"じゃないものをF列で小さい順に並べる指示
+  taskSheet.getRange("A3").setValue(query); 
+  // ↑ タスク管理シートのA3セルにこのQUERY関数を入れる（ここでA3に設定される！）
+
+  // 今ある"★"シートの数を数えて記録する
+  const currentCount = sheets.filter(sheet => sheet.getName().startsWith("★")).length;
+  PropertiesService.getScriptProperties().setProperty("クライアントシート数", currentCount);
+  // ↑ あとでシート数が変わったかチェックするために数を保存
 }
 
-function checkAndUpdateQuery() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const sheets = spreadsheet.getSheets();
-  const currentCount = sheets.filter(sheet => sheet.getName().startsWith("★")).length;
-
-  const properties = PropertiesService.getScriptProperties();
-  const savedCount = parseInt(properties.getProperty("クライアントシート数")) || 0;
-
-  if (currentCount > savedCount) {
-    updateQuery();
+// 誰かがシートを編集したときに動く関数
+function onEdit(e) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet(); // 今開いているスプレッドシートを取ってくる
+  const editedSheet = e.source.getActiveSheet(); // 編集されたシートを取ってくる
+  
+  // 編集されたシートが"★"で始まる名前かどうかチェック
+  if (editedSheet.getName().startsWith("★")) {
+    updateTaskManagementWithQuery(); // "★"シートが編集されたら、A3のQUERY関数を更新
   }
+}
 
-  properties.setProperty("クライアントシート数", currentCount);
+// 5分ごとにシートの数をチェックする関数
+function checkSheetCountPeriodically() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet(); // 今開いているスプレッドシートを取ってくる
+  const sheets = spreadsheet.getSheets(); // 全部のシートを取ってくる
+  const currentCount = sheets.filter(sheet => sheet.getName().startsWith("★")).length;
+  // ↑ 今ある"★"シートの数を数える
+
+  const properties = PropertiesService.getScriptProperties(); // 保存してあるデータを取り出す準備
+  const savedCount = parseInt(properties.getProperty("クライアントシート数")) || 0;
+  // ↑ 前回保存した"★"シートの数を取ってくる（初めてなら0）
+
+  // もしシートの数が前回と変わっていたら
+  if (currentCount !== savedCount) {
+    updateTaskManagementWithQuery(); // A3のQUERY関数を更新する
+  }
+}
+
+// 自動で動くようにトリガーを設定する関数（最初に1回だけ実行）
+function setupTriggers() {
+  // 今あるトリガーを全部消す（同じものが2つできないように）
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
+
+  // 5分ごとにcheckSheetCountPeriodicallyを動かす設定
+  ScriptApp.newTrigger("checkSheetCountPeriodically")
+    .timeBased() // 時間で動かす
+    .everyMinutes(5) // 5分ごとに
+    .create(); // 設定を作る
+
+  console.log("トリガーが設定されました。"); // 「設定できたよ」とメッセージを出す
 }
