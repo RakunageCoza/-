@@ -1,0 +1,85 @@
+// タスク管理シートを更新するメイン関数（QUERYなし）
+function updateTaskManagementAutomatically() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet(); // 現在のスプレッドシートを取得
+  const taskSheet = spreadsheet.getSheetByName("タスク管理"); // "タスク管理"シートを取得
+  const sheets = spreadsheet.getSheets(); // 全シートを取得
+  const output = []; // 集約データを格納する配列
+
+  // "★"で始まるシートのデータを取得
+  for (const sheet of sheets) {
+    if (sheet.getName().startsWith("★")) {
+      const lastRow = sheet.getLastRow();
+      if (lastRow < 5) continue;
+
+      const range = sheet.getRange("A5:G" + lastRow);
+      const values = range.getValues();
+
+      output.push(...values);
+    }
+  }
+
+  // フィルタリング：C列が空でなく、G列が"完了"でない行を抽出
+  const filteredData = output.filter(row => row[2] && row[6] !== "完了");
+
+  // ソート：F列（Col6）で昇順に並べ替え
+  filteredData.sort((a, b) => {
+    const valueA = a[5];
+    const valueB = b[5];
+    if (valueA < valueB) return -1;
+    if (valueA > valueB) return 1;
+    return 0;
+  });
+
+  // タスク管理シートにデータを書き込み
+  if (filteredData.length > 0) {
+    taskSheet.getRange(3, 1, filteredData.length, filteredData[0].length).setValues(filteredData);
+  } else {
+    taskSheet.getRange("A3:G" + taskSheet.getLastRow()).clear(); // データがない場合はクリア
+  }
+
+  // 現在のシート数を保存
+  const currentCount = sheets.filter(sheet => sheet.getName().startsWith("★")).length;
+  PropertiesService.getScriptProperties().setProperty("クライアントシート数", currentCount);
+}
+
+// シート編集時に自動実行されるトリガー関数
+function onEdit(e) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const editedSheet = e.source.getActiveSheet();
+  
+  // 編集されたシートが"★"で始まる場合のみ処理
+  if (editedSheet.getName().startsWith("★")) {
+    updateTaskManagementAutomatically();
+  }
+}
+
+// 時間ベースで定期的にチェックする関数（シート数の変化を検知）
+function checkSheetCountPeriodically() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = spreadsheet.getSheets();
+  const currentCount = sheets.filter(sheet => sheet.getName().startsWith("★")).length;
+
+  const properties = PropertiesService.getScriptProperties();
+  const savedCount = parseInt(properties.getProperty("クライアントシート数")) || 0;
+
+  // シート数に変化があれば更新
+  if (currentCount !== savedCount) {
+    updateTaskManagementAutomatically();
+  }
+}
+
+// トリガーを自動設定する関数（初回実行時に使用）
+function setupTriggers() {
+  // 既存のトリガーを削除（重複防止）
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
+
+  // 時間トリガーを設定（例: 5分ごとに実行）
+  ScriptApp.newTrigger("checkSheetCountPeriodically")
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+
+  // 編集トリガーはGAS側でonEditとして自動的に機能
+  console.log("トリガーが設定されました。");
+}
