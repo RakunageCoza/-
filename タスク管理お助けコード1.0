@@ -1,0 +1,93 @@
+function updateTaskManagementSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var allSheets = ss.getSheets();
+  
+  var taskManagementSheet = ss.getSheetByName("タスク管理");
+  var output = [];
+
+  allSheets.forEach(function(sheet) {
+    if (sheet.getName().startsWith("★")) {
+      // 一度のAPI呼び出しで全てのデータを取得
+      var values = sheet.getRange("A5:G" + sheet.getLastRow()).getValues();
+
+      // フィルター処理でC列が空でない行だけを抽出
+      var filteredValues = values.filter(function(row) {
+        return row[2]; // C列（0インデックスなので2）
+      });
+
+      output = output.concat(filteredValues);
+    }
+  });
+
+  // 一度のAPI呼び出しで全てのデータを設定
+  taskManagementSheet.getRange(3, 1, output.length, output[0].length).setValues(output);
+}
+
+// クエリシートから転記する
+// function copyQueryToTaskManagement() {
+//   var ss = SpreadsheetApp.getActiveSpreadsheet();
+//   var querySheet = ss.getSheetByName("Query");
+//   var taskManagementSheet = ss.getSheetByName("タスク管理");
+  
+//   // Queryシートからデータを取得
+//   var lastRow = querySheet.getLastRow();
+//   var range = querySheet.getRange("A1:G" + lastRow);
+//   var values = range.getValues();
+  
+//   // タスク管理シートにデータを転記
+//   taskManagementSheet.getRange("A3:G" + (2 + values.length)).setValues(values);
+// }
+
+function updateQuery() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetNames = [];
+  var sheets = ss.getSheets();
+
+  // シート名が★で始まるものだけを集める
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    if (name.startsWith('★')) {
+      sheetNames.push("'" + name + "'!A5:G");
+    }
+  }
+
+  // QUERY関数の文字列を生成
+  var queryStr = "=QUERY({" + sheetNames.join(";") + "}, \"SELECT * WHERE Col3 is not null AND Col7 <> '完了' ORDER BY Col6 ASC\")";
+
+  // 'タスク管理' シートのA3セルにQUERY関数を設定
+  var taskSheet = ss.getSheetByName('タスク管理');
+  taskSheet.getRange('A3').setValue(queryStr);
+}
+
+
+function checkAndUpdateQuery() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var currentSheetCount = 0;
+
+  // シート名が★で始まるものだけをカウント
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].getName().startsWith('★')) {
+      currentSheetCount++;
+    }
+  }
+
+  // スクリプトのプロパティから以前保存したシート数を取得
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var savedSheetCount = scriptProperties.getProperty('クライアントシート数');
+
+  // 以前のシート数が保存されていない場合、現在のシート数を保存
+  if (savedSheetCount === null) {
+    scriptProperties.setProperty('クライアントシート数', currentSheetCount.toString());
+    return;
+  }
+
+  // 現在のシート数と以前のシート数を比較
+  if (currentSheetCount > Number(savedSheetCount)) {
+    // シート数が増えた場合、QUERYを更新
+    updateQuery();
+  }
+
+  // 現在のシート数を保存
+  scriptProperties.setProperty('クライアントシート数', currentSheetCount.toString());
+}
